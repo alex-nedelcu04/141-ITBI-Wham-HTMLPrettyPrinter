@@ -12,7 +12,9 @@ while true; do
     fi
 done
 
-echo '' >> "$file"
+if [ "$(cat "$file" | tail -1 | wc -l)" -eq 0 ]; then
+    echo >> "$file"
+fi
 
 # fiecare tag si fiecare secventa text va fi pusa pe cate o linie pentru a usura prelucrarea
 
@@ -22,51 +24,89 @@ while IFS= read -r line; do
     # al doilea sed => adauga \n dupa >
     # grep "\S" => selecteaza doar liniile care au elemente nenule
     
-    echo "$line" | sed 's/</\n</g'  | sed 's/>/>\n/g' | grep "\S"  >> formatted_tags.txt
+    echo "$line" | sed 's/</\n</g'  | sed 's/>/>\n/g' | grep "\S"  >> formatted_tags
 done < "$file"
-cat formatted_tags.txt
+cat formatted_tags
 
-# verifcare html valid (TBD)
-indent=()
-tags_st=()
-tags_en=()
-nr_tags_st=()
-nr_tags_en=()
-idx_st=0
-idx_en=0
-err=0
+# Verficare HTML valid 
 
-cat formatted_tags.txt | grep -oP '(?<=<)[^/<> ]+' > tags_start_tolower.txt
-cat formatted_tags.txt | grep -oP '(?<=</)[^/<> ]+' > tags_end_tolower.txt
+first_line=$(cat formatted_tags | head -1)
 
-cat tags_start_tolower.txt | tr '[:upper:]' '[:lower:]' | uniq -c > tags_start.txt
-cat tags_end_tolower.txt | tr '[:upper:]' '[:lower:]' | uniq -c > tags_end.txt
-rm tags_start_tolower.txt; rm tags_end_tolower.txt
+if [ "$first_line" != "<!DOCTYPE html>" ]; then 
+    echo "<!DOCTYPE html> not found"
+    rm formatted_tags
+    exit 1
+fi
 
-cat tags_start.txt | while read -r line; do
-    nr=$(echo "$line" | awk '{print($1)}')
-    line=$(echo "$line" | awk '{print($2)}')
-    if [[ "$line" = "area" || "$line" = "base" || "$line" = "br" || "$line" = "col" || "$line" = "embed" || "$line" = "hr" || "$line" = "img" || "$line" = "input" || "$line" = "link" || "$line" = "meta" || "$line" = "source" || "$line" = "track" || "$line" = "wbr" ]]; then
-        continue
+# se va folosi o stiva in care vor fi memorate tag-urile de start
+# acestea vor fi eliminate in momentul in care se intalneste un tag de sfarist egal 
+# daca stack-ul nu este gol la final sau daca se intalneste alt tag de sfarsit fata 
+# de tag-ul de start din varful stive => fisier invalid
+
+
+stack=()
+
+while IFS= read -r line; do
+    tag_text_only=$(echo "$line" | grep -oP '(?<=<)[^/<> ]+')
+
+    if [ -n "$tag_text_only" ]; then # daca tag-ul este de start
+        line="$tag_text_only"
+        if [[ "$line" = "!DOCTYPE" || "$line" = "area" || "$line" = "base" || "$line" = "br" || "$line" = "col" || "$line" = "embed" || "$line" = "hr" || "$line" = "img" || "$line" = "input" || "$line" = "link" || "$line" = "meta" || "$line" = "source" || "$line" = "track" || "$line" = "wbr" ]]; then
+            continue
+        fi
+        stack+=("$line")
+    else  
+        tag_text_only=$(echo "$line" | grep -oP '(?<=</)[^/<> ]+')
+        if [ -n "$tag_text_only" ]; then  # daca tag-ul este de inchidere (si nu secveta de text)
+            if [ "$tag_text_only" == "${stack[-1]}" ]; then
+               unset 'stack[-1]'
+            else
+                echo "Unexpected closure of tag (</$tag_text_only>)"
+                rm formatted_tags
+                exit 1
+            fi
+        fi
+
     fi
-    tags_st[idx_st]="$line"
-    nr_tags_st[idx_st]="$nr"
-    echo "look: {${tags_st[idx_st]}}"
-    echo "numbers: {${nr_tags_st[idx_st]}}"
-    echo "{$idx_st}!"
-    (( idx_st += 1 ))
-done
+done < formatted_tags
 
-cat tags_end.txt | while read -r line; do
-    nr=$(echo "$line" | awk '{print($1)}')
-    line=$(echo "$line" | awk '{print($2)}')
-    tags_en[idx_en]="$line"
-    nr_tags_en[idx_en]="$nr"
-    echo "look: {${tags_en[idx_st]}}"
-    echo "numbers: {${nr_tags_en[idx_st]}}"
-    echo "{$idx_en}!"
-    (( idx_en += 1 ))
-done
+if ! [ "${#stack[@]}" -eq 0 ]; then # daca stiva nu este goala => fisier invalid 
+    rm formatted_tags
+    exit 1
+fi
 
-# rm tags_start.txt; rm tags_end.txt
-rm formatted_tags.txt
+# daca programul ajunge aici => fisierul este valid
+
+# indentare
+
+indent=0
+# fiecare linie va fi prefixata cu numarul de ordine in ierarhie
+while IFS= read -r line; do
+
+   
+    tag_text_only=$(echo "$line" | grep -oP '(?<=<)[^/<> ]+')
+    if [ -n "$tag_text_only" ]; then # daca tag-ul este de start
+        # daca tag-ul nu este unul fara tag de oprire
+        if ! [[ "$tag_text_only" = "!DOCTYPE" || "$tag_text_only" = "area" || "$tag_text_only" = "base" || "$tag_text_only" = "br" || "$tag_text_only" = "col" || "$tag_text_only" = "embed" || "$tag_text_only" = "hr" || "$tag_text_only" = "img" || "$tag_text_only" = "input" || "$tag_text_only" = "link" || "$tag_text_only" = "meta" || "$tag_text_only" = "source" || "$tag_text_only" = "track" || "$tag_text_only" = "wbr" ]]; then
+            line="${indent}${line}"
+            indent=$((indent + 1))
+        fi
+    
+    else
+        tag_text_only=$(echo "$line" | grep -oP '(?<=</)[^/<> ]+')
+        if [ -n "$tag_text_only" ]; then  # daca tag-ul este de inchidere (si nu secveta de text)
+            indent=$((indent - 1))
+            line="${indent}${line}"
+        else # etste secventa text
+            line="${indent}${line}"
+        fi
+    fi
+
+    
+    # prefixare
+    echo "$line" >> tmp_file
+
+done < formatted_tags
+
+cat tmp_file > formatted_tags
+ rm tmp_file
