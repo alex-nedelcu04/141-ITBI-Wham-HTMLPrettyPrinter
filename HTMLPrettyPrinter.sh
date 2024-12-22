@@ -26,7 +26,6 @@ while IFS= read -r line; do
     
     echo "$line" | sed 's/</\n</g'  | sed 's/>/>\n/g' | grep "\S"  >> formatted_tags
 done < "$file"
-cat formatted_tags
 
 # Verficare HTML valid 
 
@@ -88,25 +87,39 @@ while IFS= read -r line; do
     if [ -n "$tag_text_only" ]; then # daca tag-ul este de start
         # daca tag-ul nu este unul fara tag de oprire
         if ! [[ "$tag_text_only" = "!DOCTYPE" || "$tag_text_only" = "area" || "$tag_text_only" = "base" || "$tag_text_only" = "br" || "$tag_text_only" = "col" || "$tag_text_only" = "embed" || "$tag_text_only" = "hr" || "$tag_text_only" = "img" || "$tag_text_only" = "input" || "$tag_text_only" = "link" || "$tag_text_only" = "meta" || "$tag_text_only" = "source" || "$tag_text_only" = "track" || "$tag_text_only" = "wbr" ]]; then
-            line="${indent}${line}"
+            line="${indent}~${line}"
             indent=$((indent + 1))
+        else
+            line="${indent}~${line}"
         fi
     
     else
         tag_text_only=$(echo "$line" | grep -oP '(?<=</)[^/<> ]+')
         if [ -n "$tag_text_only" ]; then  # daca tag-ul este de inchidere (si nu secveta de text)
             indent=$((indent - 1))
-            line="${indent}${line}"
-        else # etste secventa text
-            line="${indent}${line}"
+            line="${indent}~${line}"
+        else # este secventa text
+            line="${indent}~${line}"
         fi
     fi
 
-    
-    # prefixare
     echo "$line" >> tmp_file
 
 done < formatted_tags
 
 cat tmp_file > formatted_tags
- rm tmp_file
+rm tmp_file
+
+# transformare prefix in tab-uri (indent = n => n tab-uri <=> 4*space-uri )
+while IFS= read -r line; do
+    indent=$(echo "$line" | grep -oP "^[0-9]+")
+    indent=$((indent * 4))
+    spaces=$(printf '%*s' "$indent")
+    echo "$line" | sed  -E "s/^[0-9]+~/$spaces/g" >> tmp_file
+done < formatted_tags
+
+cat tmp_file > formatted_tags
+rm tmp_file
+
+cat formatted_tags
+rm formatted_tags
