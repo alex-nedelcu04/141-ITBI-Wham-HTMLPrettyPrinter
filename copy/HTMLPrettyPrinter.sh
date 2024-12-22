@@ -39,8 +39,8 @@ err=0
 cat formatted_tags.txt | grep -oP '(?<=<)[^/<> ]+' > tags_start_tolower.txt
 cat formatted_tags.txt | grep -oP '(?<=</)[^/<> ]+' > tags_end_tolower.txt
 
-cat tags_start_tolower.txt | tr '[:upper:]' '[:lower:]' | sort | uniq -c > tags_start.txt
-cat tags_end_tolower.txt | tr '[:upper:]' '[:lower:]' | sort | uniq -c > tags_end.txt
+cat tags_start_tolower.txt | tr '[:upper:]' '[:lower:]' | uniq -c > tags_start.txt
+cat tags_end_tolower.txt | tr '[:upper:]' '[:lower:]' | uniq -c > tags_end.txt
 rm tags_start_tolower.txt; rm tags_end_tolower.txt
 
 shopt -s lastpipe
@@ -52,11 +52,9 @@ cat tags_start.txt | while read -r line; do
     fi
     tags_st[idx_st]="$line"
     nr_tags_st[idx_st]="$nr"
-    : '
     echo "look: {${tags_st[idx_st]}}"
     echo "numbers: {${nr_tags_st[idx_st]}}"
     echo "{$idx_st}!"
-    '
     (( idx_st += 1 ))
 done
 
@@ -77,6 +75,7 @@ done
 shopt -u lastpipe
 
 # error checking - :(
+echo "$idx_st, $idx_en"
 
 # DOCTYPE doesn't exist - error 1
 line1=$(cat formatted_tags.txt | head -1 | tr '[:upper:]' '[:lower:]')
@@ -85,7 +84,7 @@ if [ "$line1" != "<!doctype html>" ]; then
 else
     # matching number of opened and closed tags / matching close/open doesn't exist - error 2 / 3 (matching) / 4 (frequency is different)
     if [ "$idx_st" != "$idx_en" ]; then
-        err=10 # nonequal number of types of tags
+        err=10
     else
         i=0
         while [ "$i" -lt "$idx_st" ]; do
@@ -131,6 +130,10 @@ else
             done
         fi
     fi
+
+    # combo is close -> open instead of open -> close - error 5
+
+
 fi
 
 
@@ -151,10 +154,11 @@ if [ "$err" = "0" ]; then
         fi
         (( idx_format++ ))
     done
-    '
+    
     
     rm tags_lowertags.txt
     rm tags_text_temp.txt
+    '
 else
     case "$err" in
         "1")
@@ -174,14 +178,14 @@ else
         ;;
 
         "5")
-            echo "ERROR 5 - Incorrect closing tag found before its tag;"
+            echo "ERROR 1 - Incorrect closing tag found before its tag;"
         ;;
 
         "10")
-            echo "ERROR 10 - Non-equal number of tag types and closing tag types;"
+            echo "hahahha"
         ;;
     esac
 fi
 
-rm tags_start.txt; rm tags_end.txt
-rm formatted_tags.txt
+# rm tags_start.txt; rm tags_end.txt
+# rm formatted_tags.txt
