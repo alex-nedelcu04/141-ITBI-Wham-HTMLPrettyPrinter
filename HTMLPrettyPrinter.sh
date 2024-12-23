@@ -1,16 +1,20 @@
 #!/bin/bash
 
-# loop pana la primirea unui fisier valid ca argument
+if [ -z "$1" ]; then
+    # loop pana la primirea unui fisier valid ca argument
+    while true; do
+        echo -n "Please enter the path to an HTML file: "
+        read file
+        if [ -f "$file" ]; then
+            break
+        else
+            echo "Not a valid file. Try again"
+        fi
+    done
+else
+    file="$1"
+fi
 
-while true; do
-    echo -n "Please enter the path to an HTML file: "
-    read file
-    if [ -f "$file" ]; then
-        break
-    else
-        echo "Not a valid file. Try again"
-    fi
-done
 
 if [ "$(cat "$file" | tail -1 | wc -l)" -eq 0 ]; then
     echo >> "$file"
@@ -27,12 +31,25 @@ while IFS= read -r line; do
     echo "$line" | sed 's/</\n</g'  | sed 's/>/>\n/g' | grep "\S"  >> formatted_tags
 done < "$file"
 
+while IFS= read -r line; do
+    tag_name=$(echo "$line" | grep -oP '(?<=<)[^<> ]+')
+    cl_tag_n=$(echo "$tag_name" | tr '[:lower:]' '[:upper:]')
+    if [ "$cl_tag_n" != "!DOCTYPE" ]; then
+        tag_name=$(echo "$tag_name" | tr '[:upper:]' '[:lower:]')
+    else
+        tag_name=$(echo "$cl_tag_n")
+    fi
+    
+    echo "$line" | sed -E "s|<[^ >]+|<$tag_name|g" >> temp
+done < formatted_tags
+cat temp > formatted_tags
+rm temp
+
 # Verficare HTML valid 
 
 first_line=$(cat formatted_tags | head -1)
-
 if [ "$first_line" != "<!DOCTYPE html>" ]; then 
-    echo "<!DOCTYPE html> not found"
+    echo "ERROR - <!DOCTYPE html> not found at start of file;"
     rm formatted_tags
     exit 1
 fi
@@ -60,16 +77,16 @@ while IFS= read -r line; do
             if [ "$tag_text_only" == "${stack[-1]}" ]; then
                unset 'stack[-1]'
             else
-                echo "Unexpected closure of tag (</$tag_text_only>)"
+                echo "ERROR - Unexpected closure of tag type <$tag_text_only>;"
                 rm formatted_tags
                 exit 1
             fi
         fi
-
     fi
 done < formatted_tags
 
 if ! [ "${#stack[@]}" -eq 0 ]; then # daca stiva nu este goala => fisier invalid 
+    echo "ERROR - Number of tag opens and tag closes doesn't match - left to close: <${stack[@]}>;"
     rm formatted_tags
     exit 1
 fi
@@ -79,32 +96,56 @@ fi
 # indentare
 
 indent=0
+temp_indent=-1
+dif_spaces=0
+nr_spaces=0
+
 # fiecare linie va fi prefixata cu numarul de ordine in ierarhie
 while IFS= read -r line; do
-
-   
     tag_text_only=$(echo "$line" | grep -oP '(?<=<)[^/<> ]+')
     if [ -n "$tag_text_only" ]; then # daca tag-ul este de start
         # daca tag-ul nu este unul fara tag de oprire
         if ! [[ "$tag_text_only" = "!DOCTYPE" || "$tag_text_only" = "area" || "$tag_text_only" = "base" || "$tag_text_only" = "br" || "$tag_text_only" = "col" || "$tag_text_only" = "embed" || "$tag_text_only" = "hr" || "$tag_text_only" = "img" || "$tag_text_only" = "input" || "$tag_text_only" = "link" || "$tag_text_only" = "meta" || "$tag_text_only" = "source" || "$tag_text_only" = "track" || "$tag_text_only" = "wbr" ]]; then
             line="${indent}~${line}"
-            indent=$((indent + 1))
+            if ! [ "$tag_text_only" = "pre" ]; then
+                indent=$((indent + 1))
+            else
+                temp_indent=$((indent))
+                indent=0
+            fi
         else
             line="${indent}~${line}"
         fi
-    
     else
         tag_text_only=$(echo "$line" | grep -oP '(?<=</)[^/<> ]+')
         if [ -n "$tag_text_only" ]; then  # daca tag-ul este de inchidere (si nu secveta de text)
-            indent=$((indent - 1))
+            if ! [ "$tag_text_only" = "pre" ]; then
+                indent=$((indent - 1)) 
+            else
+                indent=$((temp_indent)) # se reseteaza indentul daca da de /pre
+                temp_indent=-1
+            fi
             line="${indent}~${line}"
         else # este secventa text
-            line="${indent}~${line}"
+            if [ "$temp_indent" = "-1" ]; then
+                nr_spaces=$(echo "$line" | grep -oP '^[ ]*' | wc -c)
+                if (( nr_spaces > 0 )); then
+                    nr_spaces=$((nr_spaces - 1))
+                fi
+                while (( nr_spaces % 4 != 0 )); do
+                    line=${line:1}
+                    nr_spaces=$((nr_spaces - 1))
+                done
+                dif_spaces=$((indent * 4))
+                dif_spaces=$((dif_spaces-nr_spaces))
+                dif_spaces=$((dif_spaces / 4))
+                line="${dif_spaces}~${line}"
+            else
+                line="${indent}~${line}"
+            fi
         fi
     fi
-
     echo "$line" >> tmp_file
-
 done < formatted_tags
 
 cat tmp_file > formatted_tags
@@ -121,5 +162,6 @@ done < formatted_tags
 cat tmp_file > formatted_tags
 rm tmp_file
 
-cat formatted_tags
+cat formatted_tags > "result_$file"
+echo "Pretty-Printing succesful!"
 rm formatted_tags
