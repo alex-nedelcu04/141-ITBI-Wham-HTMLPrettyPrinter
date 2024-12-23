@@ -82,7 +82,6 @@ while IFS= read -r line; do
                 exit 1
             fi
         fi
-
     fi
 done < formatted_tags
 
