@@ -1,18 +1,24 @@
 #!/bin/bash
 
-# loop pana la primirea unui fisier valid ca argument
+if [ -z "$1" ]; then
+    # loop pana la primirea unui fisier valid ca argument
+    while true; do
+        echo -n "Please enter the path to an HTML file: "
+        read file
+        if [ -f "$file" ]; then
+            break
+        else
+            echo "Not a valid file. Try again"
+        fi
+    done
+else
+    file="$1"
+fi
 
-while true; do
-    echo -n "Please enter the path to an HTML file: "
-    read file
-    if [ -f "$file" ]; then
-        break
-    else
-        echo "Not a valid file. Try again"
-    fi
-done
 
-echo '' >> "$file"
+if [ "$(cat "$file" | tail -1 | wc -l)" -eq 0 ]; then
+    echo >> "$file"
+fi
 
 # fiecare tag si fiecare secventa text va fi pusa pe cate o linie pentru a usura prelucrarea
 
@@ -22,166 +28,141 @@ while IFS= read -r line; do
     # al doilea sed => adauga \n dupa >
     # grep "\S" => selecteaza doar liniile care au elemente nenule
     
-    echo "$line" | sed 's/</\n</g'  | sed 's/>/>\n/g' | grep "\S"  >> formatted_tags.txt
+    echo "$line" | sed 's/</\n</g'  | sed 's/>/>\n/g' | grep "\S"  >> formatted_tags
 done < "$file"
-# cat formatted_tags.txt
 
-# formatting text into files & arrays
-indent=()
-tags_st=()
-tags_en=()
-nr_tags_st=()
-nr_tags_en=()
-idx_st=0
-idx_en=0
-err=0
-
-cat formatted_tags.txt | grep -oP '(?<=<)[^/<> ]+' > tags_start_tolower.txt
-cat formatted_tags.txt | grep -oP '(?<=</)[^/<> ]+' > tags_end_tolower.txt
-
-cat tags_start_tolower.txt | tr '[:upper:]' '[:lower:]' | sort | uniq -c > tags_start.txt
-cat tags_end_tolower.txt | tr '[:upper:]' '[:lower:]' | sort | uniq -c > tags_end.txt
-rm tags_start_tolower.txt; rm tags_end_tolower.txt
-
-shopt -s lastpipe
-cat tags_start.txt | while read -r line; do
-    nr=$(echo "$line" | awk '{print($1)}')
-    line=$(echo "$line" | awk '{print($2)}')
-    if [[ "$line" = "!doctype" || "$line" = "area" || "$line" = "base" || "$line" = "br" || "$line" = "col" || "$line" = "embed" || "$line" = "hr" || "$line" = "img" || "$line" = "input" || "$line" = "link" || "$line" = "meta" || "$line" = "source" || "$line" = "track" || "$line" = "wbr" ]]; then
-        continue
-    fi
-    tags_st[idx_st]="$line"
-    nr_tags_st[idx_st]="$nr"
-    : '
-    echo "look: {${tags_st[idx_st]}}"
-    echo "numbers: {${nr_tags_st[idx_st]}}"
-    echo "{$idx_st}!"
-    '
-    (( idx_st += 1 ))
-done
-
-
-
-cat tags_end.txt | while read -r line; do
-    nr=$(echo "$line" | awk '{print($1)}')
-    line=$(echo "$line" | awk '{print($2)}')
-    tags_en[idx_en]="$line"
-    nr_tags_en[idx_en]="$nr"
-    : '
-    echo "LOOK: {${tags_en[idx_en]}}"
-    echo "NUMBERS: {${nr_tags_en[idx_en]}}"
-    echo "{$idx_en}!"
-    '
-    (( idx_en += 1 ))
-done
-shopt -u lastpipe
-
-# error checking - :(
-
-# DOCTYPE doesn't exist - error 1
-line1=$(cat formatted_tags.txt | head -1 | tr '[:upper:]' '[:lower:]')
-if [ "$line1" != "<!doctype html>" ]; then
-    err=1
-else
-    # matching number of opened and closed tags / matching close/open doesn't exist - error 2 / 3 (matching) / 4 (frequency is different)
-    if [ "$idx_st" != "$idx_en" ]; then
-        err=10 # nonequal number of types of tags
+while IFS= read -r line; do
+    tag_name=$(echo "$line" | grep -oP '(?<=<)[^<> ]+')
+    cl_tag_n=$(echo "$tag_name" | tr '[:lower:]' '[:upper:]')
+    if [ "$cl_tag_n" != "!DOCTYPE" ]; then
+        tag_name=$(echo "$tag_name" | tr '[:upper:]' '[:lower:]')
     else
-        i=0
-        while [ "$i" -lt "$idx_st" ]; do
-            j=0
-            while [ "$j" -lt "$idx_en" ]; do
-                if [ "${tags_st[i]}" = "${tags_en[j]}" ]; then
-                    break
-                fi
-                (( j++ ))
-            done
-            if [ "$j" = "$idx_en" ]; then
-                err=2 # matching close doesn't exist
-                break
-            else
-                if [ "${nr_tags_st[i]}" != "${nr_tags_en[j]}" ]; then
-                    err=4 # frequency of opens and closes doesn't match
-                    break
-                fi
-            fi
-            (( i++ ))
-        done
+        tag_name=$(echo "$cl_tag_n")
+    fi
+    
+    echo "$line" | sed -E "s|<[^ >]+|<$tag_name|g" >> temp
+done < formatted_tags
+cat temp > formatted_tags
+rm temp
 
-        if [ "$err" = "0" ]; then
-            j=0
-            while [ "$j" -lt "$idx_en" ]; do
-                i=0
-                while [ "$i" -lt "$idx_st" ]; do
-                    if [ "${tags_st[i]}" = "${tags_en[j]}" ]; then
-                        break
-                    fi
-                    (( i++ ))
-                done
-                if [ "$i" = "$idx_st" ]; then
-                    err=3 # matching open doesn't exist
-                    break
-                else
-                    if [ "${nr_tags_st[i]}" != "${nr_tags_en[j]}" ]; then
-                        err=4 # frequency of opens and closes doesn't match
-                        break
-                    fi
+# Verficare HTML valid 
+
+first_line=$(cat formatted_tags | head -1)
+if [ "$first_line" != "<!DOCTYPE html>" ]; then 
+    echo "ERROR - <!DOCTYPE html> not found at start of file;"
+    rm formatted_tags
+    exit 1
+fi
+
+# se va folosi o stiva in care vor fi memorate tag-urile de start
+# acestea vor fi eliminate in momentul in care se intalneste un tag de sfarist egal 
+# daca stack-ul nu este gol la final sau daca se intalneste alt tag de sfarsit fata 
+# de tag-ul de start din varful stive => fisier invalid
+
+
+stack=()
+
+while IFS= read -r line; do
+    tag_text_only=$(echo "$line" | grep -oP '(?<=<)[^/<> ]+')
+
+    if [ -n "$tag_text_only" ]; then # daca tag-ul este de start
+        line="$tag_text_only"
+        if [[ "$line" = "!DOCTYPE" || "$line" = "area" || "$line" = "base" || "$line" = "br" || "$line" = "col" || "$line" = "embed" || "$line" = "hr" || "$line" = "img" || "$line" = "input" || "$line" = "link" || "$line" = "meta" || "$line" = "source" || "$line" = "track" || "$line" = "wbr" ]]; then
+            continue
+        fi
+        stack+=("$line")
+    else  
+        tag_text_only=$(echo "$line" | grep -oP '(?<=</)[^/<> ]+')
+        if [ -n "$tag_text_only" ]; then  # daca tag-ul este de inchidere (si nu secveta de text)
+            if [ "$tag_text_only" == "${stack[-1]}" ]; then
+               unset 'stack[-1]'
+            else
+                echo "ERROR - Unexpected closure of tag type <$tag_text_only>;"
+                rm formatted_tags
+                exit 1
+            fi
+        fi
+
+    fi
+done < formatted_tags
+
+if ! [ "${#stack[@]}" -eq 0 ]; then # daca stiva nu este goala => fisier invalid 
+    echo "ERROR - Number of tag opens and tag closes doesn't match - left to close: <${stack[@]}>;"
+    rm formatted_tags
+    exit 1
+fi
+
+# daca programul ajunge aici => fisierul este valid
+
+# indentare
+
+indent=0
+temp_indent=-1
+dif_spaces=0
+nr_spaces=0
+
+# fiecare linie va fi prefixata cu numarul de ordine in ierarhie
+while IFS= read -r line; do
+    tag_text_only=$(echo "$line" | grep -oP '(?<=<)[^/<> ]+')
+    if [ -n "$tag_text_only" ]; then # daca tag-ul este de start
+        # daca tag-ul nu este unul fara tag de oprire
+        if ! [[ "$tag_text_only" = "!DOCTYPE" || "$tag_text_only" = "area" || "$tag_text_only" = "base" || "$tag_text_only" = "br" || "$tag_text_only" = "col" || "$tag_text_only" = "embed" || "$tag_text_only" = "hr" || "$tag_text_only" = "img" || "$tag_text_only" = "input" || "$tag_text_only" = "link" || "$tag_text_only" = "meta" || "$tag_text_only" = "source" || "$tag_text_only" = "track" || "$tag_text_only" = "wbr" ]]; then
+            line="${indent}~${line}"
+            if ! [ "$tag_text_only" = "pre" ]; then
+                indent=$((indent + 1))
+            else
+                temp_indent=$((indent))
+                indent=0
+            fi
+        else
+            line="${indent}~${line}"
+        fi
+    else
+        tag_text_only=$(echo "$line" | grep -oP '(?<=</)[^/<> ]+')
+        if [ -n "$tag_text_only" ]; then  # daca tag-ul este de inchidere (si nu secveta de text)
+            if ! [ "$tag_text_only" = "pre" ]; then
+                indent=$((indent - 1)) 
+            else
+                indent=$((temp_indent)) # se reseteaza indentul daca da de /pre
+                temp_indent=-1
+            fi
+            line="${indent}~${line}"
+        else # este secventa text
+            if [ "$temp_indent" = "-1" ]; then
+                nr_spaces=$(echo "$line" | grep -oP '^[ ]*' | wc -c)
+                if (( nr_spaces > 0 )); then
+                    nr_spaces=$((nr_spaces - 1))
                 fi
-                (( j++ ))
-            done
+                while (( nr_spaces % 4 != 0 )); do
+                    line=${line:1}
+                    nr_spaces=$((nr_spaces - 1))
+                done
+                dif_spaces=$((indent * 4))
+                dif_spaces=$((dif_spaces-nr_spaces))
+                dif_spaces=$((dif_spaces / 4))
+                line="${dif_spaces}~${line}"
+            else
+                line="${indent}~${line}"
+            fi
         fi
     fi
-fi
+    echo "$line" >> tmp_file
+done < formatted_tags
 
+cat tmp_file > formatted_tags
+rm tmp_file
 
+# transformare prefix in tab-uri (indent = n => n tab-uri <=> 4*space-uri )
+while IFS= read -r line; do
+    indent=$(echo "$line" | grep -oP "^[0-9]+")
+    indent=$((indent * 4))
+    spaces=$(printf '%*s' "$indent")
+    echo "$line" | sed  -E "s/^[0-9]+~/$spaces/g" >> tmp_file
+done < formatted_tags
 
-if [ "$err" = "0" ]; then
-    cat formatted_tags.txt | grep -oP '(?<=<)[^<> ]+' | tr '[:upper:]' '[:lower:]'  > tags_lowertags.txt
-    cat formatted_tags.txt | grep -oP '^[[:space:]]*[^<]+'  > tags_text_temp.txt
-    
-    : '
-    idx_txt=0
-    cat tags_text_temp.txt | while IFS= read -r line_txt
-    idx_format=0
-    cat formatted_tags.txt | while read -r line; do
-        if [ "$line" = "$line_txt" ]; then
-            echo "$idx_format-$line_txt" >> tags_text.txt
-            IFS= read -r line_txt
-            (( idx_txt++ ))
-        fi
-        (( idx_format++ ))
-    done
-    '
-    
-    rm tags_lowertags.txt
-    rm tags_text_temp.txt
-else
-    case "$err" in
-        "1")
-            echo "ERROR 1 - !DOCTYPE not declared in file;"
-        ;;
+cat tmp_file > formatted_tags
+rm tmp_file
 
-        "2")
-            echo "ERROR 2 - Corresponding close tag not found for a tag;"
-        ;;
-
-        "3")
-            echo "ERROR 3 - Corresponding tag not found for a closing tag;"
-        ;;
-
-        "4")
-            echo "ERROR 4 - Number of tags and their closing tags doesn't match;"
-        ;;
-
-        "5")
-            echo "ERROR 5 - Incorrect closing tag found before its tag;"
-        ;;
-
-        "10")
-            echo "ERROR 10 - Non-equal number of tag types and closing tag types;"
-        ;;
-    esac
-fi
-
-rm tags_start.txt; rm tags_end.txt
-rm formatted_tags.txt
+cat formatted_tags > "result_$file"
+echo "Pretty-Printing succesful!"
+rm formatted_tags
