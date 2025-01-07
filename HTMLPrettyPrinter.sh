@@ -1,21 +1,25 @@
 #!/bin/bash
 
-if [ -z "$1" ]; then
+if [ -z "$1" ]; then # daca fisierul nu a fost oferit ca argument
     # loop pana la primirea unui fisier valid ca argument
     while true; do
         echo -n "Please enter the path to an HTML file: "
         read file
-        if [ -f "$file" ]; then
+        if [ -f "$file" ]; then # daca este un fisier valid
             break
         else
             echo "Not a valid file. Try again"
         fi
     done
-else
+else # daca fisierul a fost oferit ca argument
     file="$1"
+    if ! [ -f "$file" ]; then 
+        echo "Not a valid file"
+        exit 1
+    fi
 fi
 
-
+# adaugare newline la sfarsitul fisierului in cazul in care lipseste
 if [ "$(cat "$file" | tail -1 | wc -l)" -eq 0 ]; then
     echo >> "$file"
 fi
@@ -26,21 +30,25 @@ fi
 while IFS= read -r line; do
     # primul sed => adauga \n dupa <
     # al doilea sed => adauga \n dupa >
-    # grep "\S" => selecteaza doar liniile care au elemente nenule
+    # grep "\S" => selecteaza doar liniile care au elemente nenule (nu sunt goale)
     
     echo "$line" | sed 's/</\n</g'  | sed 's/>/>\n/g' | grep "\S"  >> formatted_tags
 done < "$file"
 
+
 while IFS= read -r line; do
     tag_name=$(echo "$line" | grep -oP '(?<=<)[^<> ]+')
-    cl_tag_n=$(echo "$tag_name" | tr '[:lower:]' '[:upper:]')
-    if [ "$cl_tag_n" != "!DOCTYPE" ]; then
+    upper_case_tag_name=$(echo "$tag_name" | tr '[:lower:]' '[:upper:]')
+    if [ "$upper_case_tag_name" != "!DOCTYPE" ]; then
         tag_name=$(echo "$tag_name" | tr '[:upper:]' '[:lower:]')
-    else
-        tag_name=$(echo "$cl_tag_n")
+         echo "$line" | sed -E "s|<[^ >]+|<$tag_name|g" >> temp
+    else # daca primul cuvant al tag-ului este !DOCTYPE
+        tag_name=$(echo "$upper_case_tag_name")
+        second_word=$(echo "$line" | grep -oP '(?<=<)[^<>]+' | awk '{print $2}' | tr '[:upper:]' '[:lower:]')
+        tag_name="$tag_name $second_word"
+        echo "$line" | sed -E "s|<[^>]+|<$tag_name|g" >> temp
     fi
     
-    echo "$line" | sed -E "s|<[^ >]+|<$tag_name|g" >> temp
 done < formatted_tags
 cat temp > formatted_tags
 rm temp
@@ -67,7 +75,10 @@ while IFS= read -r line; do
 
     if [ -n "$tag_text_only" ]; then # daca tag-ul este de start
         line="$tag_text_only"
-        if [[ "$line" = "!DOCTYPE" || "$line" = "area" || "$line" = "base" || "$line" = "br" || "$line" = "col" || "$line" = "embed" || "$line" = "hr" || "$line" = "img" || "$line" = "input" || "$line" = "link" || "$line" = "meta" || "$line" = "source" || "$line" = "track" || "$line" = "wbr" ]]; then
+       if [[ "$line" = "!DOCTYPE" || "$line" = "area" || "$line" = "base" || "$line" = "br" || 
+        "$line" = "col" || "$line" = "embed" || "$line" = "hr" || "$line" = "img" || 
+        "$line" = "input" || "$line" = "link" || "$line" = "meta" || "$line" = "source" || 
+        "$line" = "track" || "$line" = "wbr" ]]; then
             continue
         fi
         stack+=("$line")
@@ -105,7 +116,11 @@ while IFS= read -r line; do
     tag_text_only=$(echo "$line" | grep -oP '(?<=<)[^/<> ]+')
     if [ -n "$tag_text_only" ]; then # daca tag-ul este de start
         # daca tag-ul nu este unul fara tag de oprire
-        if ! [[ "$tag_text_only" = "!DOCTYPE" || "$tag_text_only" = "area" || "$tag_text_only" = "base" || "$tag_text_only" = "br" || "$tag_text_only" = "col" || "$tag_text_only" = "embed" || "$tag_text_only" = "hr" || "$tag_text_only" = "img" || "$tag_text_only" = "input" || "$tag_text_only" = "link" || "$tag_text_only" = "meta" || "$tag_text_only" = "source" || "$tag_text_only" = "track" || "$tag_text_only" = "wbr" ]]; then
+        if ! [[ "$tag_text_only" = "!DOCTYPE" || "$tag_text_only" = "area" || "$tag_text_only" = "base" ||
+            "$tag_text_only" = "br" || "$tag_text_only" = "col" || "$tag_text_only" = "embed" ||
+            "$tag_text_only" = "hr" || "$tag_text_only" = "img" || "$tag_text_only" = "input" ||
+            "$tag_text_only" = "link" || "$tag_text_only" = "meta" || "$tag_text_only" = "source" ||
+            "$tag_text_only" = "track" || "$tag_text_only" = "wbr" ]]; then
             line="${indent}~${line}"
             if ! [ "$tag_text_only" = "pre" ]; then
                 indent=$((indent + 1))
