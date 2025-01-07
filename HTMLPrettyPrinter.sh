@@ -147,7 +147,7 @@ while IFS= read -r line; do
                 if (( nr_spaces > 0 )); then
                     nr_spaces=$((nr_spaces - 1))
                 fi
-                while (( nr_spaces % 4 != 0 )); do
+                while (( nr_spaces % 4 != 0 || nr_spaces / 4 >= indent )); do
                     line=${line:1}
                     nr_spaces=$((nr_spaces - 1))
                 done
