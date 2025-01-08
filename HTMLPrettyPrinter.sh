@@ -177,6 +177,8 @@ done < formatted_tags
 cat tmp_file > formatted_tags
 rm tmp_file
 
+
+file=$(basename "$file")
 cat formatted_tags > "result_$file"
 echo "Pretty-Printing succesful!"
 rm formatted_tags
